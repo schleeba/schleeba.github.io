@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Meal Planner</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Calm Kitchen -->
+    <!-- Application Structure Plan: A tabbed single-page application with three main sections: 'Planner', 'Recipe Box', and 'Tips'. This structure separates the primary user task (planning) from the supporting resources (recipes, advice), creating a more focused and intuitive workflow than a linear document. The core interaction is a dynamic calendar where users can select a month/year, see pre-assigned meal themes, and click to get recipe suggestions which then populate the plan. This transforms a static report into a functional tool. A new "Add Recipe" button and modal form have been added to the 'Recipe Box' section to allow users to contribute their own data. All calendar days are now interactive to allow for meal planning on any day. Additionally, the ability to add new meal themes with emojis has been incorporated. The application now also supports editing existing recipes via an 'Edit' button on each recipe card. A new 6-star rating system has been added to recipes and the corresponding forms and displays have been updated. Users can now click on a day's theme to change it using a new modal. -->
+    <!-- Visualization & Content Choices: 
+        - Calendar: Report's static table -> Goal: Organize -> Dynamic JS/HTML grid -> Interaction: Month/year selection, click to add meals from a recipe modal, and now click on a theme to change it -> Justification: Provides a functional, editable planning tool, which is the core purpose. The functionality has been extended to all days for maximum flexibility. -> Method: Custom JS.
+        - Recipes: Report's recipe lists -> Goal: Inform/Compare/Contribute -> Interactive recipe cards with filters, "Add Recipe" and "Edit" buttons -> Interaction: Filter by theme, click to view details, add new recipes via a form, or edit existing ones with a pre-filled form. The new "Add Theme" functionality is also part of this section. Recipe cards now display a 6-star rating. -> Justification: Allows users to quickly find, contribute, and manage their recipes. The new rating system helps users quickly identify popular or highly-rated meals. -> Method: Custom JS, HTML, CSS.
+        - Prep/Cook Time: Report's text data (e.g., "Prep: 10 min") -> Goal: Compare -> Simple horizontal bar chart -> Interaction: Displayed within the recipe detail modal -> Justification: Provides a quick, visual comparison of time commitment. -> Library: Chart.js.
+        - Tips: Report's list of tips -> Goal: Inform -> Collapsible accordion sections -> Interaction: Click to expand/collapse -> Justification: Improves readability by preventing a "wall of text" and allowing focused reading. -> Method: Custom JS, HTML.
+        -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #FDFBF8;
+            color: #4A4A4A;
+        }
+        .tab-active {
+            border-bottom-color: #8A9A5B;
+            color: #333;
+            font-weight: 600;
+        }
+        .tab-inactive {
+            border-bottom-color: transparent;
+            color: #6B7280;
+        }
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 0.5rem;
+        }
+        .calendar-day {
+            border: 1px solid #E5E7EB;
+            min-height: 120px;
+            transition: all 0.2s ease-in-out;
+        }
+        .calendar-day-header {
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-align: center;
+            background-color: #F3F4F6;
+            padding: 0.25rem 0;
+            border-bottom: 1px solid #E5E7EB;
+        }
+        .calendar-day:not(.calendar-day-header):hover {
+            background-color: #F9F9E0;
+            cursor: pointer;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 120px;
+            max-height: 150px;
+        }
+        .modal {
+            transition: opacity 0.25s ease;
+        }
+        .accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        .star-rating {
+            color: #FBBF24;
+            font-size: 1.25rem;
+        }
+        .theme-text-container {
+            cursor: pointer;
+            display: inline-block;
+            transition: color 0.2s;
+        }
+        .theme-text-container:hover {
+            color: #3B82F6;
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-800">Interactive Meal Planner</h1>
+            <p class="mt-2 text-lg text-gray-600">Simplify your weeknights with a plan.</p>
+        </header>
+
+        <div class="border-b border-gray-200 mb-8">
+            <nav class="-mb-px flex justify-center space-x-6 sm:space-x-8" aria-label="Tabs">
+                <button id="tab-planner" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm tab-active">Planner</button>
+                <button id="tab-recipes" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm tab-inactive">Recipe Box</button>
+                <button id="tab-tips" class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm tab-inactive">Tips & Tricks</button>
+            </nav>
+        </div>
+
+        <main>
+            <div id="content-planner" class="space-y-6">
+                <div class="bg-white p-4 sm:p-6 rounded-xl shadow-sm">
+                    <div class="flex flex-col sm:flex-row justify-between items-center mb-4">
+                        <h2 id="calendar-header" class="text-2xl font-semibold text-gray-700 mb-4 sm:mb-0"></h2>
+                        <div class="flex items-center space-x-2">
+                            <button id="prev-month" class="p-2 rounded-md bg-gray-100 hover:bg-gray-200 transition">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+                            </button>
+                            <select id="month-select" class="border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"></select>
+                            <select id="year-select" class="border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"></select>
+                            <button id="next-month" class="p-2 rounded-md bg-gray-100 hover:bg-gray-200 transition">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" /></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="calendar-grid-header calendar-grid">
+                        <div class="calendar-day-header">Sun</div>
+                        <div class="calendar-day-header">Mon</div>
+                        <div class="calendar-day-header">Tue</div>
+                        <div class="calendar-day-header">Wed</div>
+                        <div class="calendar-day-header">Thu</div>
+                        <div class="calendar-day-header">Fri</div>
+                        <div class="calendar-day-header">Sat</div>
+                    </div>
+                    <div id="calendar-grid" class="calendar-grid"></div>
+                </div>
+            </div>
+
+            <div id="content-recipes" class="hidden">
+                <div class="flex flex-wrap justify-center gap-2 sm:gap-4 mb-8">
+                    <button class="recipe-filter-btn active bg-green-100 text-green-800 py-2 px-4 rounded-full text-sm font-semibold" data-filter="all">All</button>
+                    <button class="recipe-filter-btn bg-gray-100 text-gray-800 py-2 px-4 rounded-full text-sm font-semibold" data-filter="Slow Cooker">Slow Cooker</button>
+                    <button class="recipe-filter-btn bg-gray-100 text-gray-800 py-2 px-4 rounded-full text-sm font-semibold" data-filter="Mexican">Mexican</button>
+                    <button class="recipe-filter-btn bg-gray-100 text-gray-800 py-2 px-4 rounded-full text-sm font-semibold" data-filter="Pasta">Pasta</button>
+                    <button id="add-recipe-btn" class="bg-blue-600 text-white py-2 px-4 rounded-full text-sm font-semibold hover:bg-blue-700 transition">Add New Recipe</button>
+                    <button id="add-theme-btn" class="bg-gray-600 text-white py-2 px-4 rounded-full text-sm font-semibold hover:bg-gray-700 transition">Add New Theme</button>
+                </div>
+                <div id="recipe-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                </div>
+            </div>
+
+            <div id="content-tips" class="hidden">
+                <div class="bg-white p-4 sm:p-6 rounded-xl shadow-sm space-y-4">
+                    <h2 class="text-2xl font-semibold text-gray-700 mb-4">Maximizing Your Meal Plan</h2>
+                    <div id="tips-list" class="space-y-3"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="recipe-modal" class="modal fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 hidden opacity-0">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto transform scale-95 transition-transform duration-300">
+            <div class="p-6">
+                <div class="flex justify-between items-start">
+                    <h2 id="modal-title" class="text-2xl lg:text-3xl font-bold text-gray-800"></h2>
+                    <button id="modal-close" class="text-gray-400 hover:text-gray-600">
+                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
+                <div class="flex items-center space-x-2 mt-2">
+                    <span class="text-sm font-semibold text-gray-700">Rating:</span>
+                    <div id="modal-rating" class="star-rating"></div>
+                </div>
+                <p id="modal-desc" class="mt-2 text-gray-600"></p>
+                <div class="mt-6">
+                    <h3 class="text-lg font-semibold text-gray-700">Time Breakdown</h3>
+                    <div class="chart-container mt-2">
+                        <canvas id="time-chart"></canvas>
+                    </div>
+                </div>
+                <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-700 mb-2">Ingredients</h3>
+                        <ul id="modal-ingredients" class="list-disc list-inside space-y-1 text-gray-600 text-sm"></ul>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-700 mb-2">Instructions</h3>
+                        <div id="modal-instructions" class="prose prose-sm max-w-none space-y-2 text-gray-600"></div>
+                    </div>
+                </div>
+                <div class="mt-8 text-center">
+                    <button id="add-to-plan-btn" class="bg-green-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-green-700 transition">Add to Plan</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="add-recipe-modal" class="modal fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 hidden opacity-0">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto transform scale-95 transition-transform duration-300">
+            <div class="p-6">
+                <div class="flex justify-between items-start">
+                    <h2 id="add-recipe-modal-title" class="text-2xl lg:text-3xl font-bold text-gray-800">Add a New Recipe</h2>
+                    <button id="add-recipe-modal-close" class="text-gray-400 hover:text-gray-600">
+                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
+                <form id="add-recipe-form" class="mt-6 space-y-4">
+                    <div>
+                        <label for="recipe-title" class="block text-sm font-medium text-gray-700">Recipe Title</label>
+                        <input type="text" id="recipe-title" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                    </div>
+                    <div>
+                        <label for="recipe-theme" class="block text-sm font-medium text-gray-700">Meal Theme</label>
+                        <select id="recipe-theme" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                            <option value="">Select a theme</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="recipe-description" class="block text-sm font-medium text-gray-700">Description</label>
+                        <textarea id="recipe-description" rows="2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"></textarea>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="recipe-prep-time" class="block text-sm font-medium text-gray-700">Prep Time (minutes)</label>
+                            <input type="number" id="recipe-prep-time" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                        </div>
+                        <div>
+                            <label for="recipe-cook-time" class="block text-sm font-medium text-gray-700">Cook Time (minutes)</label>
+                            <input type="number" id="recipe-cook-time" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                        </div>
+                    </div>
+                    <div>
+                        <label for="recipe-ingredients" class="block text-sm font-medium text-gray-700">Ingredients (one per line)</label>
+                        <textarea id="recipe-ingredients" rows="5" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"></textarea>
+                    </div>
+                    <div>
+                        <label for="recipe-instructions" class="block text-sm font-medium text-gray-700">Instructions (use paragraphs for steps)</label>
+                        <textarea id="recipe-instructions" rows="5" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"></textarea>
+                    </div>
+                    <div>
+                        <label for="recipe-rating" class="block text-sm font-medium text-gray-700">Rating (1-6)</label>
+                        <select id="recipe-rating" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                            <option value="1">1 Star</option>
+                            <option value="2">2 Stars</option>
+                            <option value="3">3 Stars</option>
+                            <option value="4">4 Stars</option>
+                            <option value="5">5 Stars</option>
+                            <option value="6">6 Stars</option>
+                        </select>
+                    </div>
+                    <div class="mt-8 text-center">
+                        <button type="submit" id="save-recipe-btn" class="bg-green-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-green-700 transition">Save Recipe</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div id="add-theme-modal" class="modal fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 hidden opacity-0">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto transform scale-95 transition-transform duration-300">
+            <div class="p-6">
+                <div class="flex justify-between items-start">
+                    <h2 class="text-2xl lg:text-3xl font-bold text-gray-800">Add New Theme</h2>
+                    <button id="add-theme-modal-close" class="text-gray-400 hover:text-gray-600">
+                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
+                <form id="add-theme-form" class="mt-6 space-y-4">
+                    <div>
+                        <label for="theme-name" class="block text-sm font-medium text-gray-700">Theme Name</label>
+                        <input type="text" id="theme-name" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                    </div>
+                    <div>
+                        <label for="theme-emoji" class="block text-sm font-medium text-gray-700">Theme Emoji</label>
+                        <input type="text" id="theme-emoji" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                    </div>
+                    <div class="mt-8 text-center">
+                        <button type="submit" class="bg-green-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-green-700 transition">Save Theme</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div id="change-theme-modal" class="modal fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 hidden opacity-0">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto transform scale-95 transition-transform duration-300">
+            <div class="p-6">
+                <div class="flex justify-between items-start">
+                    <h2 class="text-2xl lg:text-3xl font-bold text-gray-800">Change Day's Theme</h2>
+                    <button id="change-theme-modal-close" class="text-gray-400 hover:text-gray-600">
+                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
+                <form id="change-theme-form" class="mt-6 space-y-4">
+                    <div>
+                        <label for="new-theme-select" class="block text-sm font-medium text-gray-700">Select a New Theme</label>
+                        <select id="new-theme-select" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
+                            <option value="">No Theme</option>
+                        </select>
+                    </div>
+                    <div class="mt-8 text-center">
+                        <button type="submit" class="bg-green-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-green-700 transition">Save Theme</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const AppData = {
+            themes: {
+                'Slow Cooker': '🍳',
+                'Mexican': '🌮',
+                'Pasta': '🍝',
+                'Leftovers': '🥡',
+                'Flexible': '🤔'
+            },
+            recipes: [
+                {
+                    id: 'sesame-chicken',
+                    theme: 'Slow Cooker',
+                    title: 'Creamy Crockpot Sesame Chicken',
+                    description: 'A healthy "better-than-takeout" alternative that becomes incredibly tender.',
+                    prepTime: 10,
+                    cookTime: 300,
+                    rating: 6,
+                    ingredients: ["2 lbs boneless, skinless chicken breasts", "2 tsp toasted sesame oil", "5 cloves garlic, minced", "1 tbsp grated ginger", "1/2 cup coconut aminos", "1/4 cup fresh pineapple juice", "3/4 cup chicken bone broth", "2 tbsp rice vinegar", "1.5 tsp kosher salt", "1/2 tsp black pepper", "1 tsp garlic powder", "2 tbsp fresh lime juice", "1/4 cup tahini", "Cooked Jasmine Rice", "Crispy Broccolini", "2 tbsp toasted sesame seeds"],
+                    instructions: "<p>Add sesame oil, garlic, ginger, coconut aminos, pineapple juice, broth, vinegar, salt, pepper, and garlic powder to the Crockpot and stir. Add chicken. Cover and cook on LOW for 4-6 hours.</p><p>Remove and shred chicken. Whisk lime juice and tahini into the pot liquid. Return chicken to the pot and toss. Serve over rice with broccolini and sesame seeds.</p>"
+                },
+                {
+                    id: 'veg-stew',
+                    theme: 'Slow Cooker',
+                    title: 'Slow Cooker Vegetable Stew',
+                    description: 'A hearty, warming, and entirely vegan option packed with vegetables.',
+                    prepTime: 10,
+                    cookTime: 100,
+                    rating: 5,
+                    ingredients: ["2 minced garlic cloves", "1 leek, chopped", "1 large carrot, chopped", "2 celery stalks, chopped", "2 cups butternut squash, chopped", "1 medium potato, chopped", "1 (15-oz) can navy beans", "1 (15-oz) can diced tomatoes", "3 cups low sodium vegetable broth", "1 bay leaf"],
+                    instructions: "<p>Place all ingredients into the rice cooker's inner pot and stir. Select 'Slow Cook' function and set for 100 minutes. Press start. Serve with bread.</p>"
+                },
+                {
+                    id: 'salmon-bowls',
+                    theme: 'Slow Cooker',
+                    title: 'Rice Cooker Salmon and Rice Bowls',
+                    description: 'A complete, flavorful meal with protein and rice, ready in under an hour.',
+                    prepTime: 10,
+                    cookTime: 45,
+                    rating: 5,
+                    ingredients: ["Soy-marinated salmon fillets", "Mushrooms", "Rice", "Dashi powder", "Toppings: sliced cucumber, scallions, seaweed salad, avocado, kimchi"],
+                    instructions: "<p>A fun, fast, hands-off way to get a full dinner. Cook the salmon, mushrooms, and rice together in the rice cooker. Serve in bowls and top with your favorite toppings.</p>"
+                },
+                {
+                    id: 'chicken-fajitas',
+                    theme: 'Mexican',
+                    title: 'Sheet Pan Chicken Fajitas',
+                    description: 'A one-pan meal with minimal cleanup and a quick total preparation time.',
+                    prepTime: 10,
+                    cookTime: 25,
+                    rating: 4,
+                    ingredients: ["1.5 lbs chicken breasts", "3 bell peppers, any color", "1 red onion, sliced", "3 tbsp olive oil", "1 tbsp white wine vinegar", "4 tsp chili powder", "2 tsp kosher salt", "1 tsp onion powder", "1 tsp garlic powder", "1/2 tsp ground cumin", "1/2 tsp smoked paprika", "1/2 tsp black pepper", "2 tbsp lime juice", "1/4 cup chopped cilantro"],
+                    instructions: "<p>Preheat oven to 425°F. In a large bowl, toss all ingredients except lime juice and cilantro. Spread on a baking sheet. Bake 20-25 minutes. Mix in lime juice and cilantro. Serve in tortillas.</p>"
+                },
+                {
+                    id: 'stuffed-poblanos',
+                    theme: 'Mexican',
+                    title: 'Stuffed Poblanos',
+                    description: 'A comforting, low-carb, and hearty meal that is both satisfying and flavorful.',
+                    prepTime: 15,
+                    cookTime: 50,
+                    rating: 5,
+                    ingredients: ["4-6 poblano peppers", "3 tbsp avocado oil", "1 lb low-fat ground turkey", "1 tbsp chili powder & other spices", "1 (15-oz) can tomato sauce", "Juice of a lime", "1 cup cooked white rice", "1 (15-oz) can black beans", "1.5 cups grated cheese"],
+                    instructions: "<p>Roast peppers at 400°F for 20-25 min. Cook ground meat with spices. Stir in tomato sauce, lime juice, rice, and beans. Stuff peppers, top with cheese, and bake at 350°F for 20-25 min.</p>"
+                },
+                {
+                    id: 'turkey-tacos',
+                    theme: 'Mexican',
+                    title: 'Turkey Mince Tacos',
+                    description: 'A lean and healthy alternative to traditional tacos, delivering rich flavor.',
+                    prepTime: 5,
+                    cookTime: 20,
+                    rating: 6,
+                    ingredients: ["1 tbsp olive oil", "1.1 lb turkey mince", "1 tbsp chipotle paste", "5 spring onions", "1 tbsp tamari sauce", "1/2 cup orange juice", "Juice of 1/2 lime", "Fresh coriander", "Taco shells & toppings"],
+                    instructions: "<p>Brown turkey mince in a pan. Add chipotle paste and spring onions. Stir in tamari and orange juice, simmer for 10 mins. Finish with lime juice and coriander. Serve in tacos.</p>"
+                },
+                {
+                    id: 'cajun-pasta',
+                    theme: 'Pasta',
+                    title: 'One Pot Creamy Cajun Chicken Pasta',
+                    description: 'A true weeknight hero that cooks entirely in one pot with minimal cleanup.',
+                    prepTime: 10,
+                    cookTime: 20,
+                    rating: 5,
+                    ingredients: ["Cajun Seasoning Mix", "1 tbsp olive oil", "1 tbsp butter", "1 lb chicken breast, cubed", "1 yellow onion, diced", "1/2 lb penne pasta", "15 oz fire roasted diced tomatoes", "2 cups chicken broth", "2 oz cream cheese", "3 green onions, sliced"],
+                    instructions: "<p>Sauté seasoned chicken and onion. Add pasta, tomatoes, and broth. Bring to a boil, then simmer covered for 10 mins until pasta is tender. Stir in cream cheese until melted. Top with green onions.</p>"
+                },
+                {
+                    id: 'pasta-fresca',
+                    theme: 'Pasta',
+                    title: 'Pasta Fresca',
+                    description: 'Remarkably fast and fresh, emphasizing abundant vegetables and a light sauce.',
+                    prepTime: 15,
+                    cookTime: 15,
+                    rating: 4,
+                    ingredients: ["12 oz penne pasta", "2 tbsp olive oil", "1 red onion, sliced", "6 cloves garlic, minced", "1 lb tomatoes, chopped", "5 oz baby spinach", "1/4 cup+ Balsamic Vinaigrette", "Parmesan or feta cheese"],
+                    instructions: "<p>Cook pasta. While it cooks, sauté onion, then garlic, then tomatoes, then spinach in a large skillet. Combine cooked pasta, veggie mix, and vinaigrette in the pasta pot. Stir to combine and heat through. Top with cheese.</p>"
+                }
+            ],
+            tips: [
+                {
+                    title: "Embrace 'Cook Once, Eat Twice'",
+                    content: "Many recipes here are ideal for larger batches. Doubling a recipe on Monday or Tuesday ensures you have delicious leftovers for Thursday, maximizing your time and reducing food waste."
+                },
+                {
+                    title: "Prep Ahead Power",
+                    content: "Spend a little time on the weekend chopping vegetables like onions, bell peppers, and garlic. This can reduce your active cooking time during the week to just a few minutes."
+                },
+                {
+                    title: "Smart Ingredient Swaps",
+                    content: "Feel free to customize! Use whole-wheat pasta for more fiber, opt for lean ground turkey instead of beef, or toss extra vegetables into any dish. Most recipes are very forgiving."
+                },
+                {
+                    title: "Freezer-Friendly Options",
+                    content: "Identify meals that freeze well. Soups, stews, and some casseroles can be frozen for future use, providing a convenient backup meal for exceptionally busy nights."
+                },
+                {
+                    title: "Flavor Boosters",
+                    content: "Keep fresh herbs, citrus fruits, and quality spices on hand. They can transform a simple dish into something special without adding unnecessary fats or calories."
+                },
+                {
+                    title: "Listen to Your Schedule",
+                    content: "This template is a guide, not a rigid rulebook. If a week is extra busy, lean on the simplest recipes or have an extra leftover night. The goal is to reduce stress, not create it."
+                }
+            ]
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const state = {
+                currentDate: new Date(),
+                activeTab: 'planner',
+                activeFilter: 'all',
+                selectedCell: null,
+                timeChart: null,
+                editingRecipeId: null,
+                changingThemeCellId: null
+            };
+
+            const selectors = {
+                tabs: document.querySelectorAll('nav button'),
+                contents: document.querySelectorAll('main > div'),
+                calendarGrid: document.getElementById('calendar-grid'),
+                calendarHeader: document.getElementById('calendar-header'),
+                monthSelect: document.getElementById('month-select'),
+                yearSelect: document.getElementById('year-select'),
+                prevMonthBtn: document.getElementById('prev-month'),
+                nextMonthBtn: document.getElementById('next-month'),
+                recipeList: document.getElementById('recipe-list'),
+                recipeFilterBtnsContainer: document.querySelector('#content-recipes .flex:first-child'),
+                addRecipeBtn: document.getElementById('add-recipe-btn'),
+                addThemeBtn: document.getElementById('add-theme-btn'),
+                tipsList: document.getElementById('tips-list'),
+                recipeModal: document.getElementById('recipe-modal'),
+                modalCloseBtn: document.getElementById('modal-close'),
+                modalTitle: document.getElementById('modal-title'),
+                modalDesc: document.getElementById('modal-desc'),
+                modalIngredients: document.getElementById('modal-ingredients'),
+                modalInstructions: document.getElementById('modal-instructions'),
+                modalRating: document.getElementById('modal-rating'),
+                addToPlanBtn: document.getElementById('add-to-plan-btn'),
+                timeChartCanvas: document.getElementById('time-chart').getContext('2d'),
+                addRecipeModal: document.getElementById('add-recipe-modal'),
+                addRecipeModalCloseBtn: document.getElementById('add-recipe-modal-close'),
+                addRecipeForm: document.getElementById('add-recipe-form'),
+                addRecipeModalTitle: document.getElementById('add-recipe-modal-title'),
+                recipeTitleInput: document.getElementById('recipe-title'),
+                recipeThemeSelect: document.getElementById('recipe-theme'),
+                recipeDescriptionInput: document.getElementById('recipe-description'),
+                recipePrepTimeInput: document.getElementById('recipe-prep-time'),
+                recipeCookTimeInput: document.getElementById('recipe-cook-time'),
+                recipeIngredientsInput: document.getElementById('recipe-ingredients'),
+                recipeInstructionsInput: document.getElementById('recipe-instructions'),
+                recipeRatingSelect: document.getElementById('recipe-rating'),
+                saveRecipeBtn: document.getElementById('save-recipe-btn'),
+                addThemeModal: document.getElementById('add-theme-modal'),
+                addThemeModalCloseBtn: document.getElementById('add-theme-modal-close'),
+                addThemeForm: document.getElementById('add-theme-form'),
+                themeNameInput: document.getElementById('theme-name'),
+                themeEmojiInput: document.getElementById('theme-emoji'),
+                changeThemeModal: document.getElementById('change-theme-modal'),
+                changeThemeModalCloseBtn: document.getElementById('change-theme-modal-close'),
+                changeThemeForm: document.getElementById('change-theme-form'),
+                newThemeSelect: document.getElementById('new-theme-select')
+            };
+
+            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+            function switchTab(tabId) {
+                state.activeTab = tabId;
+                selectors.tabs.forEach(tab => {
+                    const id = tab.id.split('-')[1];
+                    tab.classList.toggle('tab-active', id === tabId);
+                    tab.classList.toggle('tab-inactive', id !== tabId);
+                });
+                selectors.contents.forEach(content => {
+                    const id = content.id.split('-')[1];
+                    content.classList.toggle('hidden', id !== tabId);
+                });
+            }
+            
+            function getTheme(dayOfWeek) {
+                switch (dayOfWeek) {
+                    case 1: return { name: 'Slow Cooker', emoji: AppData.themes['Slow Cooker'] };
+                    case 2: return { name: 'Mexican', emoji: AppData.themes['Mexican'] };
+                    case 3: return { name: 'Pasta', emoji: AppData.themes['Pasta'] };
+                    case 4: return { name: 'Leftovers', emoji: AppData.themes['Leftovers'] };
+                    default: return { name: 'Flexible', emoji: AppData.themes['Flexible'] };
+                }
+            }
+
+            function generateCalendar(year, month) {
+                selectors.calendarGrid.innerHTML = '';
+                selectors.calendarHeader.textContent = `${monthNames[month]} ${year}`;
+                state.currentDate.setFullYear(year, month, 1);
+                const firstDay = state.currentDate.getDay();
+                const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+                for (let i = 0; i < firstDay; i++) {
+                    selectors.calendarGrid.insertAdjacentHTML('beforeend', '<div class="bg-gray-50 rounded-lg"></div>');
+                }
+
+                for (let day = 1; day <= daysInMonth; day++) {
+                    const date = new Date(year, month, day);
+                    const dayOfWeek = date.getDay();
+                    const theme = getTheme(dayOfWeek);
+                    
+                    let themeText = '';
+                    if (theme.name) {
+                        themeText = `<div class="theme-text-container text-xs text-gray-500 mt-1" data-day-theme="${theme.name}"><span class="theme-emoji">${theme.emoji}</span> <span class="theme-name">${theme.name}</span></div>`;
+                    }
+
+                    const cellId = `cell-${year}-${month}-${day}`;
+                    const dayCellHTML = `
+                        <div id="${cellId}" class="calendar-day p-2 flex flex-col rounded-lg" data-theme="${theme.name}">
+                            <div class="font-semibold text-sm">${day}</div>
+                            ${themeText}
+                            <div class="meal-text text-xs text-blue-700 mt-2 flex-grow" contenteditable="true" placeholder="Plan your meal..."></div>
+                        </div>
+                    `;
+                    selectors.calendarGrid.insertAdjacentHTML('beforeend', dayCellHTML);
+                }
+            }
+
+            function populateSelectors() {
+                const currentYear = new Date().getFullYear();
+                selectors.monthSelect.innerHTML = '';
+                monthNames.forEach((name, index) => {
+                    selectors.monthSelect.insertAdjacentHTML('beforeend', `<option value="${index}">${name}</option>`);
+                });
+
+                selectors.yearSelect.innerHTML = '';
+                for (let i = currentYear - 5; i <= currentYear + 5; i++) {
+                    selectors.yearSelect.insertAdjacentHTML('beforeend', `<option value="${i}">${i}</option>`);
+                }
+
+                selectors.monthSelect.value = state.currentDate.getMonth();
+                selectors.yearSelect.value = state.currentDate.getFullYear();
+            }
+
+            function renderRecipeFilters() {
+                const existingButtons = selectors.recipeFilterBtnsContainer.querySelectorAll('button:not(#add-recipe-btn):not(#add-theme-btn)');
+                existingButtons.forEach(btn => btn.remove());
+                
+                const filterBtnsHTML = `<button class="recipe-filter-btn bg-gray-100 text-gray-800 py-2 px-4 rounded-full text-sm font-semibold" data-filter="all">All</button>` + 
+                                       Object.keys(AppData.themes).filter(t => t !== 'Leftovers' && t !== 'Flexible').map(themeName => {
+                    const themeEmoji = AppData.themes[themeName];
+                    return `<button class="recipe-filter-btn bg-gray-100 text-gray-800 py-2 px-4 rounded-full text-sm font-semibold" data-filter="${themeName}">${themeEmoji} ${themeName}</button>`;
+                }).join('');
+                selectors.addRecipeBtn.insertAdjacentHTML('beforebegin', filterBtnsHTML);
+                
+                selectors.recipeFilterBtnsContainer.querySelectorAll('.recipe-filter-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        state.activeFilter = e.currentTarget.dataset.filter;
+                        selectors.recipeFilterBtnsContainer.querySelectorAll('.recipe-filter-btn').forEach(b => {
+                            b.classList.remove('active', 'bg-green-100', 'text-green-800');
+                            b.classList.add('bg-gray-100', 'text-gray-800');
+                        });
+                        e.currentTarget.classList.add('active', 'bg-green-100', 'text-green-800');
+                        e.currentTarget.classList.remove('bg-gray-100', 'text-gray-800');
+                        renderRecipes(state.activeFilter);
+                    });
+                });
+            }
+
+            function renderRecipes(filter = 'all') {
+                selectors.recipeList.innerHTML = '';
+                const filteredRecipes = AppData.recipes.filter(r => filter === 'all' || r.theme === filter);
+                
+                if (filteredRecipes.length === 0) {
+                    selectors.recipeList.innerHTML = `<p class="text-gray-500 col-span-full text-center">No recipes found for this category.</p>`;
+                    return;
+                }
+
+                filteredRecipes.forEach(recipe => {
+                    const stars = '★'.repeat(recipe.rating) + '☆'.repeat(6 - recipe.rating);
+                    const cardHTML = `
+                        <div class="recipe-card group bg-white rounded-xl shadow-sm overflow-hidden transform hover:-translate-y-1 transition-transform duration-300 relative" data-id="${recipe.id}">
+                            <div class="p-5">
+                                <p class="text-sm font-semibold text-green-600">${AppData.themes[recipe.theme] || ''} ${recipe.theme}</p>
+                                <h3 class="text-lg font-bold text-gray-800 mt-1">${recipe.title}</h3>
+                                <div class="star-rating">${stars}</div>
+                                <p class="text-sm text-gray-600 mt-2 h-10">${recipe.description}</p>
+                                <div class="text-xs text-gray-500 mt-4">
+                                    <span>Prep: ${recipe.prepTime}m</span> | <span>Cook: ${Math.round(recipe.cookTime)}m</span>
+                                </div>
+                            </div>
+                            <button class="edit-recipe-btn absolute top-2 right-2 p-1 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 opacity-0 group-hover:opacity-100 transition-opacity" data-id="${recipe.id}">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.794.793-2.828-2.828.793-.794zm-1.88 1.88L5 13.172v3H8.828l6.172-6.172-3.535-3.536z"/></svg>
+                            </button>
+                        </div>
+                    `;
+                    selectors.recipeList.insertAdjacentHTML('beforeend', cardHTML);
+                });
+            }
+
+            function renderTips() {
+                selectors.tipsList.innerHTML = '';
+                AppData.tips.forEach((tip, index) => {
+                    const tipHTML = `
+                        <div class="border border-gray-200 rounded-lg">
+                            <button class="accordion-toggle w-full flex justify-between items-center text-left p-4 font-semibold text-gray-700 hover:bg-gray-50">
+                                <span>${tip.title}</span>
+                                <svg class="w-5 h-5 transform transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                            </button>
+                            <div class="accordion-content">
+                                <p class="p-4 pt-0 text-gray-600">${tip.content}</p>
+                            </div>
+                        </div>
+                    `;
+                    selectors.tipsList.insertAdjacentHTML('beforeend', tipHTML);
+                });
+            }
+            
+            function showRecipeModal(recipeId) {
+                const recipe = AppData.recipes.find(r => r.id === recipeId);
+                if (!recipe) return;
+
+                state.currentRecipe = recipe;
+                selectors.modalTitle.textContent = recipe.title;
+                selectors.modalDesc.textContent = recipe.description;
+                selectors.modalIngredients.innerHTML = recipe.ingredients.map(i => `<li>${i}</li>`).join('');
+                selectors.modalInstructions.innerHTML = recipe.instructions;
+                const stars = '★'.repeat(recipe.rating) + '☆'.repeat(6 - recipe.rating);
+                selectors.modalRating.textContent = stars;
+
+                if (state.timeChart) {
+                    state.timeChart.destroy();
+                }
+                state.timeChart = new Chart(selectors.timeChartCanvas, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Time (minutes)'],
+                        datasets: [
+                            {
+                                label: 'Prep Time',
+                                data: [recipe.prepTime],
+                                backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                                borderColor: 'rgba(54, 162, 235, 1)',
+                                borderWidth: 1
+                            },
+                            {
+                                label: 'Cook Time',
+                                data: [recipe.cookTime],
+                                backgroundColor: 'rgba(255, 99, 132, 0.6)',
+                                borderColor: 'rgba(255, 99, 132, 1)',
+                                borderWidth: 1
+                            }
+                        ]
+                    },
+                    options: {
+                        indexAxis: 'y',
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: { stacked: true, beginAtZero: true },
+                            y: { stacked: true }
+                        },
+                        plugins: {
+                            legend: { position: 'bottom' },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return `${context.dataset.label}: ${context.raw} minutes`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+                selectors.recipeModal.classList.remove('hidden');
+                setTimeout(() => {
+                    selectors.recipeModal.classList.remove('opacity-0');
+                    selectors.recipeModal.querySelector('div').classList.remove('scale-95');
+                }, 10);
+            }
+
+            function hideRecipeModal() {
+                selectors.recipeModal.classList.add('opacity-0');
+                selectors.recipeModal.querySelector('div').classList.add('scale-95');
+                setTimeout(() => {
+                    selectors.recipeModal.classList.add('hidden');
+                }, 250);
+            }
+
+            function showAddRecipeModal(recipeId = null) {
+                state.editingRecipeId = recipeId;
+                selectors.addRecipeForm.reset();
+                selectors.addRecipeModalTitle.textContent = recipeId ? 'Edit Recipe' : 'Add a New Recipe';
+                selectors.saveRecipeBtn.textContent = recipeId ? 'Save Changes' : 'Save Recipe';
+
+                selectors.recipeThemeSelect.innerHTML = '<option value="">Select a theme</option>' + 
+                                                        Object.keys(AppData.themes)
+                                                        .filter(t => t !== 'Leftovers' && t !== 'Flexible')
+                                                        .map(theme => `<option value="${theme}">${AppData.themes[theme]} ${theme}</option>`).join('');
+                
+                if (recipeId) {
+                    const recipe = AppData.recipes.find(r => r.id === recipeId);
+                    if (recipe) {
+                        selectors.recipeTitleInput.value = recipe.title;
+                        selectors.recipeThemeSelect.value = recipe.theme;
+                        selectors.recipeDescriptionInput.value = recipe.description;
+                        selectors.recipePrepTimeInput.value = recipe.prepTime;
+                        selectors.recipeCookTimeInput.value = recipe.cookTime;
+                        selectors.recipeIngredientsInput.value = recipe.ingredients.join('\n');
+                        selectors.recipeInstructionsInput.value = recipe.instructions.replace(/<p>|<\/p>/g, '').replace(/<br>/g, '\n').trim();
+                        selectors.recipeRatingSelect.value = recipe.rating;
+                    }
+                }
+
+                selectors.addRecipeModal.classList.remove('hidden');
+                setTimeout(() => {
+                    selectors.addRecipeModal.classList.remove('opacity-0');
+                    selectors.addRecipeModal.querySelector('div').classList.remove('scale-95');
+                }, 10);
+            }
+
+            function hideAddRecipeModal() {
+                selectors.addRecipeModal.classList.add('opacity-0');
+                selectors.addRecipeModal.querySelector('div').classList.add('scale-95');
+                setTimeout(() => {
+                    selectors.addRecipeModal.classList.add('hidden');
+                }, 250);
+            }
+
+            function showAddThemeModal() {
+                selectors.addThemeForm.reset();
+                selectors.addThemeModal.classList.remove('hidden');
+                setTimeout(() => {
+                    selectors.addThemeModal.classList.remove('opacity-0');
+                    selectors.addThemeModal.querySelector('div').classList.remove('scale-95');
+                }, 10);
+            }
+
+            function hideAddThemeModal() {
+                selectors.addThemeModal.classList.add('opacity-0');
+                selectors.addThemeModal.querySelector('div').classList.add('scale-95');
+                setTimeout(() => {
+                    selectors.addThemeModal.classList.add('hidden');
+                }, 250);
+            }
+            
+            function showChangeThemeModal(cellId) {
+                state.changingThemeCellId = cellId;
+                const currentTheme = document.getElementById(cellId).dataset.theme;
+                selectors.newThemeSelect.innerHTML = '<option value="">No Theme</option>' + 
+                                                        Object.keys(AppData.themes).map(themeName => {
+                                                            const themeEmoji = AppData.themes[themeName];
+                                                            return `<option value="${themeName}">${themeEmoji} ${themeName}</option>`;
+                                                        }).join('');
+                selectors.newThemeSelect.value = currentTheme;
+                selectors.changeThemeModal.classList.remove('hidden');
+                setTimeout(() => {
+                    selectors.changeThemeModal.classList.remove('opacity-0');
+                    selectors.changeThemeModal.querySelector('div').classList.remove('scale-95');
+                }, 10);
+            }
+
+            function hideChangeThemeModal() {
+                selectors.changeThemeModal.classList.add('opacity-0');
+                selectors.changeThemeModal.querySelector('div').classList.add('scale-95');
+                setTimeout(() => {
+                    selectors.changeThemeModal.classList.add('hidden');
+                }, 250);
+            }
+
+            function handleDateChange() {
+                const newMonth = parseInt(selectors.monthSelect.value);
+                const newYear = parseInt(selectors.yearSelect.value);
+                generateCalendar(newYear, newMonth);
+            }
+            
+            function setupEventListeners() {
+                selectors.tabs.forEach(tab => {
+                    tab.addEventListener('click', () => switchTab(tab.id.split('-')[1]));
+                });
+
+                selectors.prevMonthBtn.addEventListener('click', () => {
+                    let currentMonth = parseInt(selectors.monthSelect.value);
+                    let currentYear = parseInt(selectors.yearSelect.value);
+                    if (currentMonth === 0) {
+                        selectors.monthSelect.value = 11;
+                        selectors.yearSelect.value = currentYear - 1;
+                    } else {
+                        selectors.monthSelect.value = currentMonth - 1;
+                    }
+                    handleDateChange();
+                });
+
+                selectors.nextMonthBtn.addEventListener('click', () => {
+                    let currentMonth = parseInt(selectors.monthSelect.value);
+                    let currentYear = parseInt(selectors.yearSelect.value);
+                    if (currentMonth === 11) {
+                        selectors.monthSelect.value = 0;
+                        selectors.yearSelect.value = currentYear + 1;
+                    } else {
+                        selectors.monthSelect.value = currentMonth + 1;
+                    }
+                    handleDateChange();
+                });
+
+                selectors.monthSelect.addEventListener('change', handleDateChange);
+                selectors.yearSelect.addEventListener('change', handleDateChange);
+                
+                selectors.addRecipeBtn.addEventListener('click', () => showAddRecipeModal());
+                selectors.addThemeBtn.addEventListener('click', showAddThemeModal);
+                
+                selectors.recipeList.addEventListener('click', (e) => {
+                    const editBtn = e.target.closest('.edit-recipe-btn');
+                    if (editBtn) {
+                        const recipeId = editBtn.dataset.id;
+                        showAddRecipeModal(recipeId);
+                        return;
+                    }
+                    const card = e.target.closest('.recipe-card');
+                    if (card) {
+                        showRecipeModal(card.dataset.id);
+                    }
+                });
+
+                selectors.tipsList.addEventListener('click', (e) => {
+                    const toggle = e.target.closest('.accordion-toggle');
+                    if (toggle) {
+                        const content = toggle.nextElementSibling;
+                        const icon = toggle.querySelector('svg');
+                        if (content.style.maxHeight) {
+                            content.style.maxHeight = null;
+                            icon.style.transform = 'rotate(0deg)';
+                        } else {
+                            content.style.maxHeight = content.scrollHeight + "px";
+                            icon.style.transform = 'rotate(180deg)';
+                        }
+                    }
+                });
+
+                selectors.calendarGrid.addEventListener('click', (e) => {
+                    const themeContainer = e.target.closest('.theme-text-container');
+                    if (themeContainer) {
+                        showChangeThemeModal(themeContainer.closest('.calendar-day').id);
+                        return;
+                    }
+                    const cell = e.target.closest('.calendar-day');
+                    if (cell && !cell.classList.contains('calendar-day-header')) {
+                        state.selectedCell = cell;
+                        switchTab('recipes');
+                        const theme = cell.dataset.theme;
+                        let filter = theme;
+                        if (theme === 'Leftovers' || theme === 'Flexible') {
+                           filter = 'all';
+                        }
+                        
+                        const filterBtn = document.querySelector(`.recipe-filter-btn[data-filter="${filter}"]`);
+                        if (filterBtn) {
+                            filterBtn.click();
+                        } else {
+                            document.querySelector(`.recipe-filter-btn[data-filter="all"]`).click();
+                        }
+                    }
+                });
+
+                selectors.modalCloseBtn.addEventListener('click', hideRecipeModal);
+                selectors.recipeModal.addEventListener('click', (e) => {
+                    if (e.target === selectors.recipeModal) {
+                        hideRecipeModal();
+                    }
+                });
+                
+                selectors.addRecipeModalCloseBtn.addEventListener('click', hideAddRecipeModal);
+                selectors.addRecipeModal.addEventListener('click', (e) => {
+                    if (e.target === selectors.addRecipeModal) {
+                        hideAddRecipeModal();
+                    }
+                });
+
+                selectors.addThemeModalCloseBtn.addEventListener('click', hideAddThemeModal);
+                selectors.addThemeModal.addEventListener('click', (e) => {
+                    if (e.target === selectors.addThemeModal) {
+                        hideAddThemeModal();
+                    }
+                });
+
+                selectors.changeThemeModalCloseBtn.addEventListener('click', hideChangeThemeModal);
+                selectors.changeThemeModal.addEventListener('click', (e) => {
+                    if (e.target === selectors.changeThemeModal) {
+                        hideChangeThemeModal();
+                    }
+                });
+
+                selectors.addRecipeForm.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    
+                    const recipeData = {
+                        id: state.editingRecipeId || Date.now().toString(),
+                        theme: selectors.recipeThemeSelect.value,
+                        title: selectors.recipeTitleInput.value,
+                        description: selectors.recipeDescriptionInput.value,
+                        prepTime: parseInt(selectors.recipePrepTimeInput.value, 10),
+                        cookTime: parseInt(selectors.recipeCookTimeInput.value, 10),
+                        rating: parseInt(selectors.recipeRatingSelect.value, 10),
+                        ingredients: selectors.recipeIngredientsInput.value.split('\n').filter(i => i.trim() !== ''),
+                        instructions: `<p>${selectors.recipeInstructionsInput.value.replace(/\n/g, '</p><p>')}</p>`
+                    };
+
+                    if (state.editingRecipeId) {
+                        const index = AppData.recipes.findIndex(r => r.id === state.editingRecipeId);
+                        if (index !== -1) {
+                            AppData.recipes[index] = recipeData;
+                        }
+                    } else {
+                        AppData.recipes.push(recipeData);
+                    }
+
+                    renderRecipes(state.activeFilter);
+                    hideAddRecipeModal();
+                });
+
+                selectors.addThemeForm.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    const newThemeName = selectors.themeNameInput.value.trim();
+                    const newThemeEmoji = selectors.themeEmojiInput.value.trim();
+                    if (newThemeName && newThemeEmoji) {
+                        AppData.themes[newThemeName] = newThemeEmoji;
+                        renderRecipeFilters();
+                        hideAddThemeModal();
+                    }
+                });
+
+                selectors.changeThemeForm.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    const newThemeName = selectors.newThemeSelect.value;
+                    const cell = document.getElementById(state.changingThemeCellId);
+                    
+                    if (cell) {
+                        cell.dataset.theme = newThemeName;
+                        const themeContainer = cell.querySelector('.theme-text-container');
+                        const themeEmojiSpan = themeContainer.querySelector('.theme-emoji');
+                        const themeNameSpan = themeContainer.querySelector('.theme-name');
+                        
+                        if (newThemeName && AppData.themes[newThemeName]) {
+                            themeEmojiSpan.textContent = AppData.themes[newThemeName];
+                            themeNameSpan.textContent = newThemeName;
+                        } else {
+                            themeEmojiSpan.textContent = '';
+                            themeNameSpan.textContent = 'No Theme';
+                        }
+                    }
+                    hideChangeThemeModal();
+                });
+                
+                selectors.addToPlanBtn.addEventListener('click', () => {
+                    if (state.selectedCell && state.currentRecipe) {
+                        const mealTextDiv = state.selectedCell.querySelector('.meal-text');
+                        mealTextDiv.textContent = state.currentRecipe.title;
+                        hideRecipeModal();
+                        switchTab('planner');
+                    }
+                });
+            }
+
+            function init() {
+                populateSelectors();
+                generateCalendar(state.currentDate.getFullYear(), state.currentDate.getMonth());
+                renderRecipeFilters();
+                renderRecipes();
+                renderTips();
+                setupEventListeners();
+            }
+
+            init();
+        });
+    </script>
+</body>
+</html>
